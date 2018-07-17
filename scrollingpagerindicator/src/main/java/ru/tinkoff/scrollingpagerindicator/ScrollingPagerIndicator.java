@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.support.annotation.ColorInt;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -52,6 +53,13 @@ public class ScrollingPagerIndicator extends View {
 
     private boolean dotCountInitialized;
 
+    private int selectedPosition;
+
+    private RectF rect = new RectF();
+    private float dotRadius;
+    private float dotHeight;
+    private float dotWidth;
+
     public ScrollingPagerIndicator(Context context) {
         this(context, null);
     }
@@ -68,6 +76,11 @@ public class ScrollingPagerIndicator extends View {
         dotColor = attributes.getColor(R.styleable.ScrollingPagerIndicator_spi_dotColor, 0);
         selectedDotColor = attributes.getColor(R.styleable.ScrollingPagerIndicator_spi_dotSelectedColor, dotColor);
         dotNormalSize = attributes.getDimensionPixelSize(R.styleable.ScrollingPagerIndicator_spi_dotSize, 0);
+
+        dotRadius = attributes.getDimensionPixelSize(R.styleable.ScrollingPagerIndicator_spi_lineRadius, 0);
+        dotHeight = attributes.getDimensionPixelSize(R.styleable.ScrollingPagerIndicator_spi_lineHeight, 0);
+        dotWidth = attributes.getDimensionPixelSize(R.styleable.ScrollingPagerIndicator_spi_lineWidth, 0);
+
         dotSelectedSize = attributes.getDimensionPixelSize(R.styleable.ScrollingPagerIndicator_spi_dotSelectedSize, 0);
         spaceBetweenDotCenters = attributes.getDimensionPixelSize(R.styleable.ScrollingPagerIndicator_spi_dotSpacing, 0) + dotNormalSize;
         looped = attributes.getBoolean(R.styleable.ScrollingPagerIndicator_spi_looped, false);
@@ -383,14 +396,11 @@ public class ScrollingPagerIndicator extends View {
         }
 
         // Some empirical coefficients
-        float scaleDistance = (spaceBetweenDotCenters + (dotSelectedSize - dotNormalSize) / 2) * 0.7f;
-        float smallScaleDistance = dotSelectedSize / 2;
         float centerScaleDistance = 6f / 7f * spaceBetweenDotCenters;
 
         for (int i = 0; i < dotOffset.length; i++) {
             float dot = dotOffset[i];
             if (dot >= visibleFramePosition && dot < visibleFramePosition + visibleFrameWidth) {
-                float diameter;
                 float scale;
 
                 // Calculate scale according to current page position
@@ -407,34 +417,30 @@ public class ScrollingPagerIndicator extends View {
                 } else {
                     scale = dotScale[i];
                 }
-                diameter = dotNormalSize + (dotSelectedSize - dotNormalSize) * scale;
-
-                // Additional scale for dots at corners
-                if (dotCount > visibleDotCount) {
-                    float currentScaleDistance;
-                    if (!looped && (i == 0 || i == dotOffset.length - 1)) {
-                        currentScaleDistance = smallScaleDistance;
-                    } else {
-                        currentScaleDistance = scaleDistance;
-                    }
-
-                    if (dot - visibleFramePosition < currentScaleDistance) {
-                        float calculatedDiameter = diameter * (dot - visibleFramePosition) / currentScaleDistance;
-                        if (calculatedDiameter < diameter) {
-                            diameter = calculatedDiameter;
-                        }
-                    } else if (dot - visibleFramePosition > canvas.getWidth() - currentScaleDistance) {
-                        float calculatedDiameter = diameter * (-dot + visibleFramePosition + canvas.getWidth()) / currentScaleDistance;
-                        if (calculatedDiameter < diameter) {
-                            diameter = calculatedDiameter;
-                        }
-                    }
-                }
 
                 paint.setColor(calculateDotColor(scale));
-                canvas.drawCircle(dot - visibleFramePosition,
-                        getMeasuredHeight() / 2,
-                        diameter / 2,
+
+                float cx = dot - visibleFramePosition;
+                float cy = getMeasuredHeight() / 2;
+                float width = dotWidth;
+                float height = dotHeight;
+                float left = cx - width / 2f;
+                float top = cy - height / 2;
+                float right = cx + width / 2f;
+                float bottom = cy + height / 2;
+                rect.left = left;
+                rect.top = top;
+                rect.right = right;
+                rect.bottom = bottom;
+
+                float center = dotOffset[selectedPosition] - visibleFramePosition;
+                float diff = Math.abs(center - cx);
+                paint.setAlpha((int) (255 * (spaceBetweenDotCenters * 2) / diff));
+
+                canvas.drawRoundRect(
+                        rect,
+                        dotRadius,
+                        dotRadius,
                         paint);
             }
         }
@@ -474,10 +480,11 @@ public class ScrollingPagerIndicator extends View {
         for (int i = 0; i < getDotCount(); i++) {
             dotOffset[i] = dotXOffset;
             dotScale[i] = 0f;
+            dotScale[i] = 1f;
             dotXOffset += spaceBetweenDotCenters;
         }
 
-        visibleFrameWidth = (visibleDotCount - 1) * spaceBetweenDotCenters + dotSelectedSize;
+        visibleFrameWidth = visibleDotCount * spaceBetweenDotCenters + dotSelectedSize;
 
         requestLayout();
         invalidate();
@@ -520,6 +527,9 @@ public class ScrollingPagerIndicator extends View {
             return;
         }
         dotScale[position] = 1 - Math.abs(offset);
+        if(dotScale[position] > 0.5f) {
+            selectedPosition = position;
+        }
     }
 
     /**
