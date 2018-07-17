@@ -420,7 +420,12 @@ public class ScrollingPagerIndicator extends View {
 
                 paint.setColor(calculateDotColor(scale));
 
-                float cx = dot - visibleFramePosition;
+                float margin = 0;
+                if(dotCount <= visibleDotCount) {
+                    margin = dotWidth - (spaceBetweenDotCenters - dotWidth) / 4;
+                }
+
+                float cx = dot - visibleFramePosition + margin;
                 float cy = getMeasuredHeight() / 2;
                 float width = dotWidth;
                 float height = dotHeight;
@@ -433,7 +438,7 @@ public class ScrollingPagerIndicator extends View {
                 rect.right = right;
                 rect.bottom = bottom;
 
-                float center = dotOffset[selectedPosition] - visibleFramePosition;
+                float center = dotOffset[selectedPosition] - visibleFramePosition + margin;
                 float diff = Math.abs(center - cx);
                 paint.setAlpha((int) (255 * (spaceBetweenDotCenters * 2) / diff));
 
