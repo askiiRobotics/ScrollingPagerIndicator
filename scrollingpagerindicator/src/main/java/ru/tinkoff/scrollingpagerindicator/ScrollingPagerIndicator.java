@@ -364,7 +364,7 @@ public class ScrollingPagerIndicator extends View {
         } else {
             measuredWidth = dotCount >= visibleDotCount
                     ? (int) visibleFrameWidth
-                    : (dotCount - 1) * spaceBetweenDotCenters + dotSelectedSize;
+                    : dotCount * spaceBetweenDotCenters + dotSelectedSize * 2;
         }
 
         int heightMode = MeasureSpec.getMode(heightMeasureSpec);
@@ -421,7 +421,7 @@ public class ScrollingPagerIndicator extends View {
                 paint.setColor(calculateDotColor(scale));
 
                 float margin = 0;
-                if(dotCount <= visibleDotCount) {
+                if (dotCount <= visibleDotCount) {
                     margin = dotWidth - (spaceBetweenDotCenters - dotWidth) / 4;
                 }
 
@@ -532,7 +532,7 @@ public class ScrollingPagerIndicator extends View {
             return;
         }
         dotScale[position] = 1 - Math.abs(offset);
-        if(dotScale[position] > 0.5f) {
+        if (dotScale[position] > 0.5f) {
             selectedPosition = position;
         }
     }
