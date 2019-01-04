@@ -5,16 +5,14 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.RectF;
 import android.support.annotation.ColorInt;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.view.ViewPager;
 import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
+import android.util.SparseArray;
 import android.view.View;
-
-import java.util.Arrays;
 
 /**
  * @author Nikita Olifer
@@ -32,10 +30,10 @@ public class ScrollingPagerIndicator extends View {
     private float visibleFramePosition;
     private float visibleFrameWidth;
 
-    private float[] dotOffset;
-    private float[] dotScale;
+    private float firstDotOffset;
+    private SparseArray<Float> dotScale;
 
-    private int dotCount;
+    private int itemCount;
 
     private final Paint paint;
     private final ArgbEvaluator colorEvaluator = new ArgbEvaluator();
@@ -218,7 +216,7 @@ public class ScrollingPagerIndicator extends View {
      * Attaches indicator to RecyclerView. Use this method if current page of the recycler is centered.
      * All pages must have the same width.
      * Like this:
-     *
+     * <p>
      * +------------------------------+
      * |---+  +----------------+  +---|
      * |   |  |     current    |  |   |
@@ -236,17 +234,17 @@ public class ScrollingPagerIndicator extends View {
      * Attaches indicator to RecyclerView. Use this method if current page of the recycler isn't centered.
      * All pages must have the same width.
      * Like this:
-     *
+     * <p>
      * +-|----------------------------+
      * | +--------+  +--------+  +----|
      * | | current|  |        |  |    |
      * | |  page  |  |        |  |    |
      * | +--------+  +--------+  +----|
      * +-|----------------------------+
-     *   | currentPageLeftCorner
-     *   |
+     * | currentPageLeftCorner
+     * |
      *
-     * @param recyclerView recycler view to attach
+     * @param recyclerView           recycler view to attach
      * @param currentPageLeftCornerX x coordinate of current view left corner relative to recycler view
      */
     public void attachToRecyclerView(@NonNull RecyclerView recyclerView, int currentPageLeftCornerX) {
@@ -267,7 +265,7 @@ public class ScrollingPagerIndicator extends View {
         attachRunnable = new Runnable() {
             @Override
             public void run() {
-                dotCount = -1;
+                itemCount = -1;
                 attachToPager(pager, attacher);
             }
         };
@@ -307,18 +305,18 @@ public class ScrollingPagerIndicator extends View {
     public void onPageScrolled(int page, float offset) {
         if (offset < 0 || offset > 1) {
             throw new IllegalArgumentException("Offset must be [0, 1]");
-        } else if (page < 0 || page != 0 && page >= dotCount) {
+        } else if (page < 0 || page != 0 && page >= itemCount) {
             throw new IndexOutOfBoundsException("page must be [0, adapter.getItemCount())");
         }
 
-        if (!looped || dotCount <= visibleDotCount && dotCount > 1) {
-            Arrays.fill(dotScale, 0);
+        if (!looped || itemCount <= visibleDotCount && itemCount > 1) {
+            dotScale.clear();
 
             scaleDotByOffset(page, offset);
 
-            if (page < dotCount - 1) {
+            if (page < itemCount - 1) {
                 scaleDotByOffset(page + 1, 1 - offset);
-            } else if (dotCount > 1) {
+            } else if (itemCount > 1) {
                 scaleDotByOffset(0, 1 - offset);
             }
 
@@ -343,10 +341,10 @@ public class ScrollingPagerIndicator extends View {
      * @param position new current position
      */
     public void setCurrentPosition(int position) {
-        if (position != 0 && (position < 0 || position >= dotCount)) {
+        if (position != 0 && (position < 0 || position >= itemCount)) {
             throw new IndexOutOfBoundsException("Position must be [0, adapter.getItemCount()]");
         }
-        if (dotCount == 0) {
+        if (itemCount == 0) {
             return;
         }
         adjustFramePosition(0, position);
@@ -362,9 +360,9 @@ public class ScrollingPagerIndicator extends View {
             // Maximum width with all dots visible
             measuredWidth = (visibleDotCount - 1) * spaceBetweenDotCenters + dotSelectedSize;
         } else {
-            measuredWidth = dotCount >= visibleDotCount
+            measuredWidth = itemCount >= visibleDotCount
                     ? (int) visibleFrameWidth
-                    : dotCount * spaceBetweenDotCenters + dotSelectedSize * 2;
+                    : itemCount * spaceBetweenDotCenters + dotSelectedSize * 2;
         }
 
         int heightMode = MeasureSpec.getMode(heightMeasureSpec);
@@ -391,31 +389,44 @@ public class ScrollingPagerIndicator extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (dotOffset == null || dotOffset.length < visibleDotThreshold) {
+        int dotCount = getDotCount();
+        if (dotCount < visibleDotThreshold) {
             return;
         }
 
         // Some empirical coefficients
         float centerScaleDistance = 6f / 7f * spaceBetweenDotCenters;
 
-        for (int i = 0; i < dotOffset.length; i++) {
-            float dot = dotOffset[i];
+        int firstVisibleDotPos = (int) (visibleFramePosition - firstDotOffset) / spaceBetweenDotCenters;
+        int lastVisibleDotPos = firstVisibleDotPos
+                + (int) (visibleFramePosition + visibleFrameWidth - getDotOffsetAt(firstVisibleDotPos))
+                / spaceBetweenDotCenters;
+
+        // If real dots count is less than we can draw inside visible frame, we move lastVisibleDotPos
+        // to the last item
+        if (firstVisibleDotPos == 0 && lastVisibleDotPos + 1 > dotCount) {
+            lastVisibleDotPos = dotCount - 1;
+        }
+
+        for (int i = firstVisibleDotPos; i <= lastVisibleDotPos; i++) {
+            float dot = getDotOffsetAt(i);
             if (dot >= visibleFramePosition && dot < visibleFramePosition + visibleFrameWidth) {
                 float scale;
 
                 // Calculate scale according to current page position
-                if (looped && dotCount > visibleDotCount) {
-                    if (dot >= visibleFramePosition + visibleFrameWidth / 2 - centerScaleDistance
-                            && dot <= visibleFramePosition + visibleFrameWidth / 2) {
-                        scale = (dot - visibleFramePosition - visibleFrameWidth / 2 + centerScaleDistance) / centerScaleDistance;
-                    } else if (dot > visibleFramePosition + visibleFrameWidth / 2
-                            && dot < visibleFramePosition + visibleFrameWidth / 2 + centerScaleDistance) {
-                        scale = 1 - (dot - visibleFramePosition - visibleFrameWidth / 2) / centerScaleDistance;
+                if (looped && itemCount > visibleDotCount) {
+                    float frameCenter = visibleFramePosition + visibleFrameWidth / 2;
+                    if (dot >= frameCenter - centerScaleDistance
+                            && dot <= frameCenter) {
+                        scale = (dot - frameCenter + centerScaleDistance) / centerScaleDistance;
+                    } else if (dot > frameCenter
+                            && dot < frameCenter + centerScaleDistance) {
+                        scale = 1 - (dot - frameCenter) / centerScaleDistance;
                     } else {
                         scale = 0;
                     }
                 } else {
-                    scale = dotScale[i];
+                    scale = getDotScaleAt(i);
                 }
 
                 paint.setColor(calculateDotColor(scale));
@@ -426,6 +437,7 @@ public class ScrollingPagerIndicator extends View {
                 }
 
                 float cx = dot - visibleFramePosition + margin;
+
                 float cy = getMeasuredHeight() / 2;
                 float width = dotWidth;
                 float height = dotHeight;
@@ -457,38 +469,28 @@ public class ScrollingPagerIndicator extends View {
     }
 
     private void updateScaleInIdleState(int currentPos) {
-        if (!looped || dotCount < visibleDotCount) {
-            for (int i = 0; i < dotScale.length; i++) {
-                dotScale[i] = i == currentPos ? 1f : 0;
-            }
+        if (!looped || itemCount < visibleDotCount) {
+            dotScale.clear();
+            dotScale.put(currentPos, 1f);
             invalidate();
         }
     }
 
-    private void initDots(int count) {
-        if (dotCount == count && dotCountInitialized) {
+    private void initDots(int itemCount) {
+        if (this.itemCount == itemCount && dotCountInitialized) {
             return;
         }
-        dotCount = count;
+        this.itemCount = itemCount;
         dotCountInitialized = true;
+        dotScale = new SparseArray<>();
 
-        dotOffset = new float[getDotCount()];
-        dotScale = new float[dotOffset.length];
-
-        if (count < visibleDotThreshold) {
+        if (itemCount < visibleDotThreshold) {
             requestLayout();
             invalidate();
             return;
         }
 
-        float dotXOffset = looped && dotCount > visibleDotCount ? 0 : dotSelectedSize / 2;
-        for (int i = 0; i < getDotCount(); i++) {
-            dotOffset[i] = dotXOffset;
-            dotScale[i] = 0f;
-            dotScale[i] = 1f;
-            dotXOffset += spaceBetweenDotCenters;
-        }
-
+        firstDotOffset = looped && this.itemCount > visibleDotCount ? 1f : dotSelectedSize / 2;
         visibleFrameWidth = visibleDotCount * spaceBetweenDotCenters + dotSelectedSize;
 
         requestLayout();
@@ -496,44 +498,65 @@ public class ScrollingPagerIndicator extends View {
     }
 
     private int getDotCount() {
-        if (looped && dotCount > visibleDotCount) {
+        if (looped && itemCount > visibleDotCount) {
             return infiniteDotCount;
         } else {
-            return dotCount;
+            return itemCount;
         }
     }
 
     private void adjustFramePosition(float offset, int pos) {
-        if (dotCount <= visibleDotCount) {
+        if (itemCount <= visibleDotCount) {
             // Without scroll
             visibleFramePosition = 0;
-        } else if (!looped && dotCount > visibleDotCount) {
+        } else if (!looped && itemCount > visibleDotCount) {
             // Not looped with scroll
-            float center = dotOffset[pos] + spaceBetweenDotCenters * offset;
+            float center = getDotOffsetAt(pos) + spaceBetweenDotCenters * offset;
             visibleFramePosition = center - visibleFrameWidth / 2;
 
             // Block frame offset near start and end
             int firstCenteredDotIndex = visibleDotCount / 2;
-            float lastCenteredDot = dotOffset[dotOffset.length - 1 - firstCenteredDotIndex];
-            if (visibleFramePosition + visibleFrameWidth / 2 < dotOffset[firstCenteredDotIndex]) {
-                visibleFramePosition = dotOffset[firstCenteredDotIndex] - visibleFrameWidth / 2;
+            float lastCenteredDot = getDotOffsetAt(getDotCount() - 1 - firstCenteredDotIndex);
+            if (visibleFramePosition + visibleFrameWidth / 2 < getDotOffsetAt(firstCenteredDotIndex)) {
+                visibleFramePosition = getDotOffsetAt(firstCenteredDotIndex) - visibleFrameWidth / 2;
             } else if (visibleFramePosition + visibleFrameWidth / 2 > lastCenteredDot) {
                 visibleFramePosition = lastCenteredDot - visibleFrameWidth / 2;
             }
         } else {
             // Looped with scroll
-            float center = dotOffset[infiniteDotCount / 2] + spaceBetweenDotCenters * offset;
+            float center = getDotOffsetAt(infiniteDotCount / 2) + spaceBetweenDotCenters * offset;
             visibleFramePosition = center - visibleFrameWidth / 2;
         }
     }
 
     private void scaleDotByOffset(int position, float offset) {
-        if (dotScale == null || dotScale.length == 0) {
+        if (dotScale == null || getDotCount() == 0) {
             return;
         }
-        dotScale[position] = 1 - Math.abs(offset);
-        if (dotScale[position] > 0.5f) {
+        setDotScaleAt(position, 1 - Math.abs(offset));
+        if (getDotScaleAt(position) > 0.5f) {
             selectedPosition = position;
+        }
+
+    }
+
+    private float getDotOffsetAt(int index) {
+        return firstDotOffset + index * spaceBetweenDotCenters;
+    }
+
+    private float getDotScaleAt(int index) {
+        Float scale = dotScale.get(index);
+        if (scale != null) {
+            return scale;
+        }
+        return 0;
+    }
+
+    private void setDotScaleAt(int index, float scale) {
+        if (scale == 0) {
+            dotScale.remove(index);
+        } else {
+            dotScale.put(index, scale);
         }
     }
 
@@ -553,7 +576,7 @@ public class ScrollingPagerIndicator extends View {
          * {@link ScrollingPagerIndicator#reattach()} - each time your adapter items change.
          *
          * @param indicator indicator
-         * @param pager pager to attach
+         * @param pager     pager to attach
          */
         void attachToPager(@NonNull ScrollingPagerIndicator indicator, @NonNull T pager);
 
