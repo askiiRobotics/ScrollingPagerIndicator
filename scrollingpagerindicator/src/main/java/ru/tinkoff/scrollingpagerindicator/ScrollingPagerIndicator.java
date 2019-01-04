@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.support.annotation.ColorInt;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -450,7 +451,7 @@ public class ScrollingPagerIndicator extends View {
                 rect.right = right;
                 rect.bottom = bottom;
 
-                float center = dotOffset[selectedPosition] - visibleFramePosition + margin;
+                float center = getDotOffsetAt(selectedPosition) - visibleFramePosition + margin;
                 float diff = Math.abs(center - cx);
                 paint.setAlpha((int) (255 * (spaceBetweenDotCenters * 2) / diff));
 
